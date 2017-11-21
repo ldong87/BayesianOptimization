@@ -112,9 +112,17 @@ class BayesianOptimization(object):
             self.X = np.vstack((self.X, np.asarray(x).reshape((1, -1))))
             self.Y = np.append(self.Y, self.f(**dict(zip(self.keys, x))))
 
+            self.res['max'] = {'max_val': self.Y.max(),
+                               'max_params': dict(zip(self.keys,
+                                                      self.X[self.Y.argmax()]))
+                               }
+            self.res['all']['values'].append(self.Y[-1])
+            self.res['all']['params'].append(dict(zip(self.keys, self.X[-1])))
+
             if self.verbose:
                 self.plog.print_step(x, self.Y[-1])
 
+        # TODO:include the following into res
         # Append any other points passed by the self.initialize method (these
         # also have a corresponding target value passed by the user).
         self.init_points += self.x_init
@@ -268,22 +276,27 @@ class BayesianOptimization(object):
             if self.verbose:
                 self.plog.print_header()
             self.init(init_points)
+        
+        if acq == 'rnd':
+            x_max = self.random_state.uniform(self.bounds[:, 0],
+                                      self.bounds[:, 1],
+                                      size=self.bounds.shape[0])
+        else:
+            y_max = self.Y.max()
 
-        y_max = self.Y.max()
+            # Set parameters if any was passed
+            self.gp.set_params(**gp_params)
 
-        # Set parameters if any was passed
-        self.gp.set_params(**gp_params)
+            # Find unique rows of X to avoid GP from breaking
+            ur = unique_rows(self.X)
+            self.gp.fit(self.X[ur], self.Y[ur])
 
-        # Find unique rows of X to avoid GP from breaking
-        ur = unique_rows(self.X)
-        self.gp.fit(self.X[ur], self.Y[ur])
-
-        # Finding argmax of the acquisition function.
-        x_max = acq_max(ac=self.util.utility,
-                        gp=self.gp,
-                        y_max=y_max,
-                        bounds=self.bounds,
-                        random_state=self.random_state)
+            # Finding argmax of the acquisition function.
+            x_max = acq_max(ac=self.util.utility,
+                            gp=self.gp,
+                            y_max=y_max,
+                            bounds=self.bounds,
+                            random_state=self.random_state)
 
         # Print new header
         if self.verbose:
@@ -310,20 +323,25 @@ class BayesianOptimization(object):
             self.X = np.vstack((self.X, x_max.reshape((1, -1))))
             self.Y = np.append(self.Y, self.f(**dict(zip(self.keys, x_max))))
 
-            # Updating the GP.
-            ur = unique_rows(self.X)
-            self.gp.fit(self.X[ur], self.Y[ur])
+            if acq == 'rnd':
+                x_max = self.random_state.uniform(self.bounds[:, 0],
+                                          self.bounds[:, 1],
+                                          size=self.bounds.shape[0])
+            else:
+            	# Updating the GP.
+            	ur = unique_rows(self.X)
+            	self.gp.fit(self.X[ur], self.Y[ur])
 
-            # Update maximum value to search for next probe point.
-            if self.Y[-1] > y_max:
-                y_max = self.Y[-1]
+            	# Update maximum value to search for next probe point.
+            	if self.Y[-1] > y_max:
+                	y_max = self.Y[-1]
 
-            # Maximize acquisition function to find next probing point
-            x_max = acq_max(ac=self.util.utility,
-                            gp=self.gp,
-                            y_max=y_max,
-                            bounds=self.bounds,
-                            random_state=self.random_state)
+            	# Maximize acquisition function to find next probing point
+            	x_max = acq_max(ac=self.util.utility,
+                            	gp=self.gp,
+                            	y_max=y_max,
+                            	bounds=self.bounds,
+                            	random_state=self.random_state)
 
             # Print stuff
             if self.verbose:
